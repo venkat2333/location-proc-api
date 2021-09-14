@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:os="http://www.mulesoft.org/schema/mule/os" xmlns:file="http://www.mulesoft.org/schema/mule/file"
+	xmlns:api-gateway="http://www.mulesoft.org/schema/mule/api-gateway"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/api-gateway http://www.mulesoft.org/schema/mule/api-gateway/current/mule-api-gateway.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd">
+	
+	<flow name="implementationFlow" doc:id="a7da703c-ec81-44f1-9779-3f841b6ed5b9" >
+		<ee:transform doc:name="Transform Message" doc:id="698bd009-f4b3-4587-a8e9-16b28d30e525" >
+			<ee:message >
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="attributes" ><![CDATA[%dw 2.0
+output application/java
+---
+{
+	clientId: attributes.headers.client_id,
+	clientSecret: attributes.headers.client_secret,
+	ipAddress: (attributes.queryParams.ipaddress default "0.0.0.0") as String
+	
+}]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<http:request method="GET" doc:name="Call To geocode system API" doc:id="667437a9-1fad-48c1-a22d-6a8987dde468" config-ref="geocodeSystem_HTTPRequestor" path="/${geocodesystem.path}" sendCorrelationId="ALWAYS" target="geocodeResponse">
+			<http:headers ><![CDATA[#[output application/java
+---
+{
+	"client_id" : vars.attributes.clientId,
+	"client_secret": vars.attributes.clientSecret
+}]]]></http:headers>
+			<http:query-params ><![CDATA[#[output application/java
+---
+{ 
+	"ipaddress" : vars.attributes.ipAddress
+}]]]></http:query-params>
+		</http:request>
+		<set-variable value="#[vars.geocodeResponse.zip]" doc:name="Set GeoCode zip" doc:id="9110c15d-4148-47a0-a6ef-2a084add5950" variableName="geoCodezip"/>
+		<logger level="INFO" doc:name="Logger" doc:id="20009415-85b9-4bac-b246-85a7365df1b9" message="Response from geocode system api: #[vars.geocodeResponse]"/>
+	    <choice doc:name="Choice" doc:id="668064d4-b78a-4da7-9c33-c07c72ac562d" >
+			<when expression="#[vars.geoCodezip != null]">
+				<flow-ref doc:name="implementationSub_Flow" doc:id="70be8139-0096-49ac-aa66-cc14304efd23" name="implementationSub_Flow"/>
+				<set-variable value="#[output application/json 
+---
+payload[?($.State == vars.geocodeResponse.region)].'Zip Code'[0]]" doc:name="companyZip" doc:id="ec08d3d1-f8b4-45f0-a3bd-b3e3491c7e36" variableName="companyZip"/>
+				<logger level="INFO" doc:name="Logger" doc:id="a11a031e-0358-4a1a-8465-28519573127e" message="Office location: #[vars.officeLocation]" />
+				<http:request method="GET" doc:name="weather-system" doc:id="3809e53b-79de-48ce-8e75-99806b905ca2" config-ref="weatherSystem_HTTPRequestor" path="/${weathersystem.path}" sendCorrelationId="ALWAYS" target="weatherResponse">
+		<http:headers><![CDATA[#[output application/java
+---
+{
+	"client_id" : vars.attributes.clientId,
+	"client_secret": vars.attributes.clientSecret
+}]]]></http:headers>
+			<http:query-params><![CDATA[#[output application/java
+---
+{
+	"postalcode" : vars.companyZip default vars.geoCodezip
+}]]]></http:query-params>
+		</http:request>
+				<ee:transform doc:name="Transform Message" doc:id="c73d5a76-3196-4095-9a4a-2275e85f356c">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"userLoc": {
+		ipAddress: vars.attributes.ipAddress,
+		state: vars.geocodeResponse.region,
+		zipCode: vars.geocodeResponse.zip
+	},
+	"weatherInfo": {
+		highTemperatureF: vars.weatherResponse.main.'temp_max',
+		lowTemperatureF: vars.weatherResponse.main.'temp_min',
+		currentTemperatureF: vars.weatherResponse.main.temp,
+		currentOutlook: vars.weatherResponse.weather.description[0]
+	},
+	error: if (vars.weatherResponse.main.'temp_max' != null) false else true
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</when>
+			<otherwise >
+				<ee:transform doc:name="Transform Message" doc:id="ce475771-906d-4d8a-9682-9b1119eb4156" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"userLocation": {
+		ip: vars.attributes.ip,
+		State: vars.geocodeResponse.region default "",
+		ZipCode: vars.geocodeResponse.zip default ""
+	},
+	"officeLocation": {
+		errorCode: "-1",
+		errorMessage: "Invalid IP address"
+	},
+	"weather": null
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</otherwise>
+		</choice>
+	
+</flow>
+	<sub-flow name="implementationSub_Flow" doc:id="c946dfbd-e00f-4e04-9c51-3db575eb85e0" >
+		<logger level="INFO" doc:name="Logger" doc:id="0397fc00-6d32-4786-807d-51db6831696d" />
+		<file:read doc:name="G Drive" doc:id="54fe5499-569b-46b4-a6e4-edebed12c204" path="${app.home}/location.csv" outputMimeType='application/csv; separator=","'/>	
+	</sub-flow>
+	
+	<!-- <flow name="retrieveLocationMappingFlow" doc:id="a9d3b1a6-f4c6-494c-9a3b-afdeb3495908" >
+		<os:retrieve doc:name="Retrieve" doc:id="41648f15-8f1f-4f56-ada1-9d362e54e84a" key="#[upper(vars.geocodeResponse.region)]" objectStore="OS_locations">
+			<os:default-value ><![CDATA[error]]></os:default-value>
+		</os:retrieve>
+		<choice doc:name="Choice" doc:id="d1970b65-d266-49a0-82a6-ddd5bc642a53" >
+			<when expression='#[payload == "error"]'>
+				<os:retrieve doc:name="Retrieve" doc:id="db10d591-d097-4ce1-85a7-4b30b8fd0505" key="#[(vars.geocodeResponse.regionName)]" objectStore="OS_locations">
+					<os:default-value><![CDATA[error]]></os:default-value>
+				</os:retrieve>
+			</when>
+			<otherwise >
+				<logger level="INFO" doc:name="Logger" doc:id="66360438-8ef4-4051-b12e-eb02e4cea0af" message="Retrieved data from objectstore"/>
+			</otherwise>
+		</choice>
+		<ee:transform doc:name="Transform Message" doc:id="a9a7b81c-65bb-4535-9052-252106a760d0">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+-&#45;&#45;
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow> -->
+	
+	<!-- <flow name="storeLocationMappingFlow" doc:id="ad280843-8f51-48bc-b299-49017bf3ad72" >
+		<scheduler doc:name="Daily" doc:id="b2e67d0d-76d8-4a2e-8ebc-4c29cad5186c" >
+			<scheduling-strategy >
+				<fixed-frequency frequency="1" timeUnit="DAYS"/>
+			</scheduling-strategy>
+		</scheduler>
+		<file:read doc:name="Read" doc:id="3188622c-7c1b-4112-87ee-0f24b404f9e9" path="${app.home}/location.csv" outputMimeType='application/csv; separator=","'/>
+		<ee:transform doc:name="Transform Message" doc:id="f1bf99d5-f1e2-4411-9bb2-629df9cc25a4" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+-&#45;&#45;
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<foreach doc:name="For Each" doc:id="f4023d5e-48df-47fd-9117-77e305f3eb3a" >
+			<os:store doc:name="Store" doc:id="89ce9dc8-bbcb-4b79-b179-b28b0d9a377d" key="#[payload.State]" objectStore="OS_locations"/>
+		</foreach>
+	</flow> -->
+	
+</mule>

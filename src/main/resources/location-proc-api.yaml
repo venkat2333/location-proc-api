@@ -1,0 +1,20 @@
+api: 
+  id: "17128503"
+  name: "location-proc-api"
+  version: "v1"
+  path: "/api"
+ 
+http: 
+  port: "80"
+  host: "ip-api.com"
+  path: "/json"
+  
+geocodesystem:
+  host: "sys-api-geocode.us-e2.cloudhub.io"
+  port: "80"
+  path: "api/system/geocode/v1/postalcode"
+
+weathersystem:
+  host: "sys-api-weather.us-e2.cloudhub.io"
+  port: "80"
+  path: "api/system/v1/weather"

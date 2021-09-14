@@ -1,0 +1,40 @@
+#%RAML 1.0
+title: location-process
+version: 1.0
+description: Location process API retrieves the specific location weather information based on ip address
+
+traits:
+  client-id-required:
+    headers:
+      client_id:
+        type: string
+      client_secret:
+        type: string
+
+/location:
+ is: [client-id-required]
+ get:
+  queryParameters:
+   ipaddress:
+    type: string
+    required: true
+    pattern: '^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$'
+  responses:
+   200:
+    body:
+     application/json:
+       example: !include locWeatherInfo.raml
+   400:
+    body:
+     application/json: 
+      example:
+       {"message" : "Bad Request"}
+   401:
+    body:
+     application/json: 
+   500:
+    body:
+     application/json:
+      example:
+        {"message" : "Internal Server Error"}
+  
